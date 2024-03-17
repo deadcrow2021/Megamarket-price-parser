@@ -13,6 +13,13 @@ def parse_price_str(text: str) -> int:
     return int(number)
 
 
+def format_price(price):
+    price_formated = '{:,}'.format(int(price))
+    price_formated = price_formated.replace(',', '.') + ' \u20BD'
+
+    return price_formated
+
+
 def click_price_selector(driver):
     selector_div = driver.find_element(By.CLASS_NAME, 'pdp-tab-selector') # selector with links
     selector_liks = selector_div.find_elements(By.XPATH, '*')
@@ -36,7 +43,7 @@ def catch_error(exception, info = ''):
 
 
 
-def fill_log_file(dir_path, text):
+def fill_log_file(dir_path, text = ''):
     date = datetime.datetime.now()
     
     today = date.strftime('%d_%m_%Y')

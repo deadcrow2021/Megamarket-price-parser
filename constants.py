@@ -20,7 +20,7 @@ CHAT_ID = -1002023766309
 # задержка между ссылками
 DELAY_BETWEEN_LINKS = 5 # seconds
 # задержка между циклами парсинга
-DELAY_BETWEEN_PARSE_CYCLES = 30 # minutes
+DELAY_BETWEEN_PARSE_CYCLES = 15 # minutes
 
 # путь к текущей папке (в которой лежит этот файл)
 CURRENT_DIR_PATH = os.path.dirname(__file__)
