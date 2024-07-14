@@ -4,10 +4,9 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
-from asgiref.sync import async_to_sync
-
 from bot import bot
 
+import asyncio
 import pandas as pd
 import time
 
@@ -37,7 +36,6 @@ options.add_argument('--disable-notifications')
 options.add_argument('--ignore-certificate-errors')
 options.add_argument("--disable-proxy-certificate-handler")
 options.add_argument("--disable-content-security-policy")
-# options.add_argument("--headless")
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 driver.set_window_size(1600, 900)
 
@@ -49,18 +47,25 @@ links_number = data.shape[0]
 links = data['Ссылка']
 titles = data['Наименование']
 
+global messages_list_to_send
 
 messages_list_to_send = []
 messages_heap = []
 
 
-def generate_message(price_shops_details, bonus_shops_details, other_shops):
+async def generate_message(link_ind, price_shops_details, bonus_shops_details, other_shops):
+    global messages_heap
+
     message = ''
     bonus_shops_message = ''
     better_offers_shops = []
     our_best_offer = None
     
     lowest_price_shop = None
+    
+    ind = link_ind
+    link = links[ind]
+    title = titles[ind]
 
     try:
 
@@ -105,10 +110,6 @@ def generate_message(price_shops_details, bonus_shops_details, other_shops):
                     ]
             else:
                 print('Ни у одного из наших магазинов не указана цена. Либо произошла неизвестная ошибка.')
-        
-        # if not price_shops_details and not bonus_shops_details:
-        #     continue
-
 
         for shop in other_shops:
             shop_price = other_shops[shop]['price']
@@ -169,132 +170,144 @@ def generate_message(price_shops_details, bonus_shops_details, other_shops):
 
 
 
+async def main():
+    global messages_list_to_send, messages_heap
+    
+    for ind in cycle(range(links_number)):
+        link = links[ind]
+        title = titles[ind]
 
-for ind in cycle(range(links_number)):
-    link = links[ind]
-    title = titles[ind]
+        price_shops_details = {}
+        bonus_shops_details = {}
+        other_shops = {}
 
-    price_shops_details = {}
-    bonus_shops_details = {}
-    other_shops = {}
-
-    try:
-
-        print(f'Обработка ссылки № {ind + 1}:  -  ', link, title)
-        
-        slash = '' if link.endswith('/') else '/'
-        
         try:
-            print(1)
-            driver.get(link + slash + '#?details_block=prices')
-            time.sleep(2)
-        except:
-            try:
-                print(2)
-                driver.get(link)
-                time.sleep(2)
-                click_price_selector(driver)
 
+            print(f'Обработка ссылки № {ind + 1}:  -  ', link, title)
+            
+            slash = '' if link.endswith('/') else '/'
+            
+            try:
+                print(1)
+                driver.get(link + slash + '#?details_block=prices')
+                time.sleep(2)
             except:
                 try:
-                    print(3)
-                    driver.find_element(By.CLASS_NAME, 'not-found')
-                    info = f'INFO - Ссылка № {ind + 1} - {link}, возможно, не существует.'
-                    messages_list_to_send.append(info)
-                    continue
-                except Exception as exc:
-                    print(4)
-                    fill_log_file(CURRENT_DIR_PATH, catch_error(exc))
-                    continue
+                    print(2)
+                    driver.get(link)
+                    time.sleep(2)
+                    click_price_selector(driver)
 
-        try:
-            cards_list_div = driver.find_element(By.CLASS_NAME, 'product-offers') # prices list div
-            cards_list = cards_list_div.find_elements(By.CLASS_NAME, 'product-offer')
+                except:
+                    try:
+                        print(3)
+                        driver.find_element(By.CLASS_NAME, 'not-found')
+                        info = f'INFO - Ссылка № {ind + 1} - {link}, возможно, не существует.'
+                        messages_list_to_send.append(info)
+                        continue
+                    except Exception as exc:
+                        print(4)
+                        fill_log_file(CURRENT_DIR_PATH, catch_error(exc))
+                        continue
+
+            try:
+                cards_list_div = driver.find_element(By.CLASS_NAME, 'product-offers') # prices list div
+                cards_list = cards_list_div.find_elements(By.CLASS_NAME, 'product-offer')
+
+            except Exception as exc:
+                print(5)
+                info = f'Ссылка № {ind + 1} - {link}, возможно, не содержит вкладку "Цена".'
+                messages_list_to_send.append(info)
+                fill_log_file(CURRENT_DIR_PATH, catch_error(exc, info))
+                continue
+
+            for card in cards_list:
+
+                try:
+                    shop_name_block = card.find_element(By.CLASS_NAME, 'pdp-merchant-rating-block__merchant-name')
+                    shop_name = shop_name_block.text
+                except Exception as e:
+                    shop_name = 'Undefined'
+
+                try:
+                    delivery_type_div = card.find_element(By.CLASS_NAME, 'offer-item-delivery-type')
+                    delivery_type_child_elements = delivery_type_div.find_elements(By.XPATH, '*')
+                    delivery_type = delivery_type_child_elements[0].text # доставка по клику / курьером
+                except Exception as e:
+                    delivery_type = ''
+
+                try:
+                    price_div = card.find_element(By.CLASS_NAME, 'product-offer-price__amount')
+                    price = parse_price_str(price_div.text)
+                except Exception as e:
+                    price = 0
+
+                try:
+                    bonuses_div = card.find_element(By.CLASS_NAME, 'product-offer-price-bonus')
+                    bonuses_text = bonuses_div.find_element(By.CLASS_NAME, 'bonus-amount')
+                    bonus = parse_price_str(bonuses_text.text)
+                except Exception as exc:
+                    bonus = 0
+
+                card_data = {
+                        'price': price,
+                        'bonus': bonus,
+                    }
+
+                if shop_name in PRICE_SHOPS:
+                    price_shops_details[shop_name] = card_data
+
+                elif shop_name in BONUS_SHOPS:
+                    bonus_shops_details[shop_name] = card_data
+
+                else:
+                    if 'клик' in delivery_type:
+                        other_shops[shop_name] = card_data
 
         except Exception as exc:
-            print(5)
-            info = f'Ссылка № {ind + 1} - {link}, возможно, не содержит вкладку "Цена".'
-            messages_list_to_send.append(info)
-            fill_log_file(CURRENT_DIR_PATH, catch_error(exc, info))
+            fill_log_file(CURRENT_DIR_PATH, catch_error(exc))
+            price_shops_details, bonus_shops_details, other_shops = {}, {}, {}
             continue
 
+        if not price_shops_details and not bonus_shops_details:
+            continue
 
-        for card in cards_list:
+        messages_heap = await generate_message(ind, price_shops_details, bonus_shops_details, other_shops)
 
-            try:
-                shop_name_block = card.find_element(By.CLASS_NAME, 'pdp-merchant-rating-block__merchant-name')
-                shop_name = shop_name_block.text
-            except Exception as e:
-                shop_name = 'Undefined'
+        joined_messages_heap = '\n\n'.join(messages_heap)
 
-            try:
-                delivery_type_div = card.find_element(By.CLASS_NAME, 'offer-item-delivery-type')
-                delivery_type_child_elements = delivery_type_div.find_elements(By.XPATH, '*')
-                delivery_type = delivery_type_child_elements[0].text # доставка по клику / курьером
-            except Exception as e:
-                delivery_type = ''
-
-            try:
-                price_div = card.find_element(By.CLASS_NAME, 'product-offer-price__amount')
-                price = parse_price_str(price_div.text)
-            except Exception as e:
-                price = 0
-
-            try:
-                bonuses_div = card.find_element(By.CLASS_NAME, 'product-offer-price-bonus')
-                bonuses_text = bonuses_div.find_element(By.CLASS_NAME, 'bonus-amount')
-                bonus = parse_price_str(bonuses_text.text)
-            except Exception as exc:
-                bonus = 0
-
-            card_data = {
-                    'price': price,
-                    'bonus': bonus,
-                }
-            
-            # print(shop_name, delivery_type, price, bonus)
-
-            if shop_name in PRICE_SHOPS:
-                price_shops_details[shop_name] = card_data
-
-            elif shop_name in BONUS_SHOPS:
-                bonus_shops_details[shop_name] = card_data
-
+        if len(joined_messages_heap) > 3000:
+            if len(joined_messages_heap) > 4000:
+                messages_list_to_send.extend([joined_messages_heap[0+i : 4000+i] for i in range(0, len(joined_messages_heap), 4000)])
             else:
-                if 'клик' in delivery_type:
-                    other_shops[shop_name] = card_data
-            
-        # print(price_shops_details, bonus_shops_details, other_shops)
-    
-    except Exception as exc:
-        fill_log_file(CURRENT_DIR_PATH, catch_error(exc))
-        price_shops_details, bonus_shops_details, other_shops = {}, {}, {}
-        continue
-    
-    if not price_shops_details and not bonus_shops_details:
-        continue
-    
-    messages_heap = generate_message(price_shops_details, bonus_shops_details, other_shops)
+                messages_list_to_send.append(joined_messages_heap)
 
-    joined_messages_heap = '\n\n'.join(messages_heap)
+            messages_heap = []
 
-    if len(joined_messages_heap) > 3000:
-        messages_list_to_send.append(joined_messages_heap)
-        messages_heap = []
-
-    time.sleep(DELAY_BETWEEN_LINKS)
+        await asyncio.sleep(DELAY_BETWEEN_LINKS)
 
 
-    if ind + 1 == links_number:
-        if messages_heap and joined_messages_heap:
-            messages_list_to_send.append(joined_messages_heap)
+        if ind + 1 == links_number:
+            if messages_heap and joined_messages_heap:
+                messages_list_to_send.append(joined_messages_heap)
 
-        for msg in messages_list_to_send:
-            async_to_sync(bot.send_message)(CHAT_ID, msg)
+            i = 0
+            while i < len(messages_list_to_send):
+                try:
+                    await bot.send_message(CHAT_ID, messages_list_to_send[i])
+                    await asyncio.sleep(0.2)
+                    i += 1
 
-        messages_heap = []
-        messages_list_to_send = []
-        print('finish cycle')
-        time.sleep(DELAY_BETWEEN_PARSE_CYCLES)
+                except Exception as exc:
+                    fill_log_file(CURRENT_DIR_PATH, catch_error(exc))
+                    print('Send message error')
+                    await asyncio.sleep(2)
+
+            messages_heap = []
+            messages_list_to_send = []
+            print('finish cycle')
+            await asyncio.sleep(DELAY_BETWEEN_PARSE_CYCLES)
 
 
+if __name__ == '__main__':
+    asyncio.run(main())

@@ -1,3 +1,4 @@
 *.xlsx
 logs/
 __pycache__/
+venv/

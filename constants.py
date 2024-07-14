@@ -1,21 +1,23 @@
 import os
 
 
+BOT_KEY = 'bot_api_key'
+
 # магазины, для которых ориентируюсь только на цену товара
 PRICE_SHOPS = [
-    'Digital Smart',
-    'UnixStore',
-    'Air.Market',
+    'Digital 123',
+    'asdStore',
+    'qwe.Market',
     ]
 
 # магазины, для которых ориентируюсь только на разницу (цена - бонусы)
 BONUS_SHOPS = [
-    'АллоХа.Store',
+    'zxc.Store',
     ]
 
 
 # id чата
-CHAT_ID = -1002023766309
+CHAT_ID = -10010000000000
 
 # задержка между ссылками
 DELAY_BETWEEN_LINKS = 5 # seconds

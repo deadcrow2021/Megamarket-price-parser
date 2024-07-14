@@ -1,8 +1,15 @@
-from aiogram import Bot, Dispatcher, executor
+from aiogram import Bot, Dispatcher
+import asyncio
 
-bot = Bot('7028205605:AAEhUyp66HJWVlhpv7Ku41IExSG3V8NX7Ks')
+from constants import BOT_KEY
 
-disp = Dispatcher(bot)
+bot = Bot(BOT_KEY)
+
+disp = Dispatcher()
+
+async def main():
+    await disp.start_polling(bot)
+    
 
 if __name__ == '__main__':
-    executor.start_polling(disp)
+    asyncio.run(main())
